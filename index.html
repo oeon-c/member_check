@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>동아리 정산</title>
+<link rel="stylesheet" href="./style.css">
+<header><a href="#events">동아리 정산</a><span id="mode"></span></header>
+<nav id="nav" hidden><a href="#events">이벤트</a><a href="#roster">학기 명단</a><a href="#settings">설정</a></nav>
+<main id="app"></main>
+<p id="status" role="status"></p>
+<dialog id="members" aria-labelledby="member-title">
+  <h2 id="member-title">참여자 선택</h2>
+  <input id="search" type="search" placeholder="이름 검색" aria-label="이름 검색">
+  <div id="member-list"></div>
+  <footer><strong id="count"></strong><button id="done">완료</button></footer>
+</dialog>
+<script type="module" src="./app.js"></script>
+</html>
