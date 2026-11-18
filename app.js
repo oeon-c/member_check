@@ -14,6 +14,37 @@ let client, club, session;
 let saving = false;
 let selection = new Set();
 
+// iOS Safari changes the visual viewport when its software keyboard opens.
+// Keep the focused field inside that visible area after focus and viewport changes.
+function revealFocusedField() {
+  const target = document.activeElement;
+  if (!target?.matches('input:not([type="checkbox"]), textarea, select')) return;
+
+  const viewport = window.visualViewport;
+  const visibleTop = viewport?.offsetTop ?? 0;
+  const visibleBottom = visibleTop + (viewport?.height ?? window.innerHeight);
+  const rect = target.getBoundingClientRect();
+  const margin = 16;
+  let shift = 0;
+  if (rect.bottom > visibleBottom - margin) shift = rect.bottom - visibleBottom + margin;
+  else if (rect.top < visibleTop + margin) shift = rect.top - visibleTop - margin;
+  if (!shift) return;
+
+  const dialogScroller = target.closest('dialog[open]');
+  if (dialogScroller) dialogScroller.scrollBy({ top: shift, behavior: 'smooth' });
+  else window.scrollBy({ top: shift, behavior: 'smooth' });
+}
+
+function scheduleFocusedFieldReveal() {
+  requestAnimationFrame(revealFocusedField);
+  // Safari reports the keyboard's final visual viewport after focus dispatch.
+  window.setTimeout(revealFocusedField, 280);
+}
+
+document.addEventListener('focusin', scheduleFocusedFieldReveal);
+window.visualViewport?.addEventListener('resize', scheduleFocusedFieldReveal);
+window.visualViewport?.addEventListener('scroll', scheduleFocusedFieldReveal);
+
 async function save(next) {
   if (local) localStorage.setItem(storageKey, JSON.stringify(next));
   else {

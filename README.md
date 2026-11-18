@@ -5,9 +5,11 @@
 ## 실행과 배포
 
 - 로컬에서는 프로젝트 폴더에서 `python -m http.server 8000`을 실행하고 `http://localhost:8000/`을 연다. 설정이 비어 있으면 체험판 데이터는 해당 브라우저에만 저장된다.
-- GitHub에서 새 저장소를 만들고 이 소스의 `main` 브랜치를 푸시한다. 저장소의 **Settings → Pages → Source → GitHub Actions**를 선택한 뒤 **Actions → Deploy GitHub Pages → Run workflow**를 실행한다. 이후 main 푸시로 자동 배포된다.
-- Supabase 프로젝트의 SQL Editor에서 `schema.sql`을 한 번 실행한다. `config.js`에는 프로젝트 URL과 **publishable key**를 넣는다. 개인 명단과 계좌 정보는 앱 화면에서 입력한다. 카카오 시크릿과 Supabase secret/service_role 키는 서버 설정에서만 사용한다.
-- [Supabase 카카오 로그인 가이드](https://supabase.com/docs/guides/auth/social-sign-in/auth-kakao)에 따라 카카오 개발자 앱을 만들고 Supabase에 카카오 인증을 설정한다. Supabase의 Kakao callback URL을 카카오에 등록하고, GitHub Pages 앱 주소를 Supabase의 Site URL 및 Redirect URLs에 등록한다. 인수인계 링크를 사용하려면 같은 앱 주소 경로의 `?handover=...` 변형도 허용한다.
+- GitHub 저장소의 **Settings → Pages → Build and deployment → Source**에서 **GitHub Actions**를 선택한다. 이 저장소의 workflow는 `main` 푸시와 수동 실행을 지원하며, Pages 아티팩트를 빌드해 배포한다.
+- GitHub 저장소의 **Settings → Secrets and variables → Actions → Variables**에 `SUPABASE_URL`과 `SUPABASE_PUBLISHABLE_KEY`를 추가한다. 둘 다 브라우저에 공개되는 프로젝트 URL과 publishable key다. workflow가 두 변수를 배포용 `config.js`에 넣는다. 값이 비어 있으면 브라우저 로컬 저장 체험판으로 실행된다. `config.js` 원본은 로컬 체험판에서 빈 값으로 둔다.
+- Supabase 프로젝트의 SQL Editor에서 `schema.sql`을 한 번 실행한다. [Supabase 카카오 로그인 가이드](https://supabase.com/docs/guides/auth/social-sign-in/auth-kakao)에 따라 Kakao Developers 앱의 플랫폼에 기본 GitHub Pages 도메인 `https://oeon-c.github.io`를 등록하고, Kakao Login Redirect URI에는 Supabase가 표시하는 callback URL(`https://<project-ref>.supabase.co/auth/v1/callback`)을 등록한다. Kakao의 REST API key와 로그인 Client Secret은 Supabase Authentication의 Kakao provider 설정에 입력한다. 카카오 동의항목에서 이메일을 제공하지 않으면 Supabase의 해당 provider 설정에서 이메일 없이 로그인 허용을 켠다.
+- Supabase **Authentication → URL Configuration**의 Site URL을 `https://oeon-c.github.io/member_check/`로 지정하고, Redirect URLs에도 해당 주소를 추가한다. 사용자 정의 도메인을 쓰면 위 두 URL을 실제 배포 주소로 바꾼다. 인수인계 링크는 같은 경로에 `?handover=...`를 붙인다.
+- 개인 명단과 계좌 정보는 앱 화면에서 입력한다. Kakao Client Secret, Supabase secret/service_role 키는 GitHub 변수나 정적 파일에 넣지 않는다.
 - 첫 총무가 배포 앱에서 카카오 로그인한 뒤 Supabase Authentication → Users에서 자신의 사용자 UUID를 확인한다. SQL Editor에서 아래 문장의 UUID를 바꿔 한 번 실행한 후 웹앱을 새로고침한다.
 
 ```sql

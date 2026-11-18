@@ -19,9 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      - run: |
-          mkdir dist
-          cp index.html style.css app.js config.js model.mjs dist/
+      - name: Prepare static site
+        run: |
+          mkdir -p dist
+          cp index.html style.css app.js model.mjs dist/
+      - name: Generate public Supabase configuration
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          node --input-type=module -e "import { writeFileSync } from 'node:fs'; const config = { supabaseUrl: process.env.SUPABASE_URL || '', publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || '' }; writeFileSync('dist/config.js', 'export const config = ' + JSON.stringify(config, null, 2) + ';\\n');"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

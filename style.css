@@ -18,7 +18,7 @@ form form{margin:0}
 .card{display:block;color:inherit}
 label{display:block;margin-bottom:12px;font-weight:650}
 input,textarea,select,button{font:inherit;min-height:44px;border-radius:9px}
-input:not([type=checkbox]),textarea,select{width:100%;background:#fff;color:inherit;border:1px solid #a5b7b0;padding:8px 10px}
+input:not([type=checkbox]),textarea,select{display:block;width:100%;min-width:0;max-width:100%;min-inline-size:0;box-sizing:border-box;background:#fff;color:inherit;border:1px solid #a5b7b0;padding:8px 10px}
 textarea{min-height:100px}
 button{border:0;background:var(--accent);color:white;padding:8px 14px;font-weight:750;cursor:pointer}
 button:disabled{opacity:.5}
