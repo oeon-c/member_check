@@ -16,6 +16,18 @@ form form{margin:0}
 .summary strong{display:block;font-size:clamp(1.8rem,8vw,3rem);line-height:1.25}
 .summary small{color:#d1e9e3}
 .card{display:block;color:inherit}
+.event-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
+.button-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:9px;padding:8px 14px;background:var(--accent);color:white;font-weight:750}
+.secondary-link{background:#e6efec;color:#164a40;margin-top:8px}
+.attendee-inline{overflow-wrap:anywhere}
+.progress-label{display:block;margin-top:8px;font-weight:750;color:var(--accent)}
+.payment-status-list,.payment-check-list{list-style:none;margin:0;padding:0}
+.payment-status-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #e6efec}
+.paid-status{color:#087044}
+.unpaid-status{color:#8a4a19}
+.payment-check{display:flex;align-items:center;gap:12px;min-height:48px;border-bottom:1px solid #e6efec;cursor:pointer}
+.payment-check input{width:22px;height:22px;min-height:22px;accent-color:var(--accent)}
+#notice{min-height:320px;font-size:1.02rem;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;background:#fbfdfc}
 label{display:block;margin-bottom:12px;font-weight:650}
 input,textarea,select,button{font:inherit;min-height:44px;border-radius:9px}
 input:not([type=checkbox]),textarea,select{display:block;width:100%;min-width:0;max-width:100%;min-inline-size:0;box-sizing:border-box;background:#fff;color:inherit;border:1px solid #a5b7b0;padding:8px 10px}
@@ -31,3 +43,9 @@ dialog::backdrop{background:#14262088}
 .member input{width:20px;min-height:auto;height:20px;accent-color:var(--accent)}
 #status{color:#394f48;overflow-wrap:anywhere}
 .between{flex-wrap:wrap}
+@media(max-width:600px){
+  nav{overflow-x:auto;white-space:nowrap}
+  nav a{flex:0 0 auto}
+  #notice{min-height:42vh;font-size:1rem}
+  .event-actions{align-items:flex-start}
+}

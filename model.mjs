@@ -12,10 +12,11 @@ export const won = (value) => Number(value).toLocaleString('ko-KR') + '원';
 export const deadline = (event) => event.deadline
   ? event.deadline + (event.time ? ' ' + event.time : '') + '까지'
   : '';
-export function notice(template, event, profile) {
+export function notice(template, event, profile, participantNames = []) {
   const result = settlement(event);
   const fields = {
     이벤트명: event.name, 시행일: event.date, 인원: people(event),
+    참여자명단: participantNames.join(', '),
     납부액: result ? won(result.amount) : '', 마감: deadline(event),
     총무: profile.name, 은행: profile.bank, 계좌: profile.account, 예금주: profile.holder,
   };

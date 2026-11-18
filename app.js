@@ -73,15 +73,39 @@ async function change(edit, refresh = render) {
 }
 
 const eventPage = (event) => '#event/' + event.id;
-const currentEvent = () => state.events.find((event) => eventPage(event) === location.hash);
+const eventEditPage = (event) => eventPage(event) + '/edit';
+const currentEvent = () => {
+  const match = location.hash.match(/^#event\/([^/]+)/);
+  return match ? state.events.find((event) => event.id === match[1]) : undefined;
+};
 const roster = (event) => state.semesters.find(({ id }) => id === event.semester)?.members ?? [];
+function attendeeRows(event) {
+  const members = roster(event).filter((member) => event.selected.includes(member.id))
+    .map((member) => ({ key: 'member:' + member.id, name: member.name, count: 1 }));
+  const extras = (event.extras ?? []).map((extra) => ({
+    key: 'extra:' + extra.id, name: extra.name, count: Number(extra.count) || 1,
+  }));
+  return [...members, ...extras];
+}
+const paidKeys = (event) => new Set(Array.isArray(event.paid) ? event.paid : []);
+const paidCount = (event) => {
+  const paid = paidKeys(event);
+  return attendeeRows(event).reduce((count, attendee) => count + (paid.has(attendee.key) ? attendee.count : 0), 0);
+};
+const participantNames = (event) => attendeeRows(event).map(({ name, count }) =>
+  count > 1 ? `${name} (${count}명)` : name);
+function prunePaid(event) {
+  const activeKeys = new Set(attendeeRows(event).map(({ key }) => key));
+  event.paid = (Array.isArray(event.paid) ? event.paid : []).filter((key) => activeKeys.has(key));
+}
 const field = (label, name, extra = '', value = '') =>
   `<label>${label}<input name="${name}" ${extra} value="${escape(value)}"></label>`;
 
 function render() {
   $('#nav').hidden = false;
   const event = currentEvent();
-  if (event) return renderEvent(event);
+  if (event) return location.hash.endsWith('/edit') ? renderEventEdit(event) : renderEventView(event);
+  if (location.hash === '#pending') return renderPending();
   if (location.hash === '#roster') return renderRoster();
   if (location.hash === '#settings') return renderSettings();
   app.innerHTML = `<h1>이벤트</h1>
@@ -95,13 +119,14 @@ function render() {
     </form>
     ${[...state.events].sort((a, b) => b.date.localeCompare(a.date)).map((item) =>
       `<a class="card between" href="${eventPage(item)}"><strong>${escape(item.name)}</strong>
-        <small>${item.date} · ${people(item)}명 ${settlement(item) ? '· ' + won(settlement(item).amount) : ''}</small></a>`).join('')
+        <small>${item.date} · ${people(item)}명 ${settlement(item) ? '· ' + won(settlement(item).amount) : '· 정산 금액 미입력'}
+          ${people(item) ? '· 입금 ' + paidCount(item) + '/' + people(item) + '명' : ''}</small></a>`).join('')
       || '<p>등록한 이벤트가 없어요.</p>'}`;
   bind('#new-event', (data) => {
     const name = data.get('name').trim();
     if (!name) return status('이벤트명을 입력해 주세요.');
     const item = { id: id(), name, date: data.get('date'), semester: data.get('semester'),
-      selected: [], extras: [], expense: '', deadline: '', time: '' };
+      selected: [], extras: [], paid: [], expense: '', deadline: '', time: '' };
     change((next) => next.events.push(item), () => { location.hash = eventPage(item); });
   });
 }
@@ -146,64 +171,52 @@ function drawSummary(event) {
     : people(event) ? '총 지출액을 입력해 주세요.' : '참여자를 먼저 선택해 주세요.';
 }
 
-function renderEvent(event) {
-  app.innerHTML = `<a href="#events">‹ 이벤트 목록</a><h1>${escape(event.name)}</h1>
+function renderPending() {
+  const pending = [...state.events]
+    .filter((event) => people(event) > 0 && paidCount(event) < people(event))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  app.innerHTML = `<h1>미완료 정산</h1><p>입금 확인이 끝나지 않은 이벤트예요.</p>
+    ${pending.map((event) => `<a class="card" href="${eventPage(event)}">
+      <strong>${escape(event.name)}</strong>
+      <small>${event.date} · ${settlement(event) ? won(settlement(event).amount) + ' / 1인' : '정산 금액 미입력'}</small>
+      <span class="progress-label">입금 ${paidCount(event)} / ${people(event)}명</span>
+    </a>`).join('') || '<section><p>미완료된 정산이 없어요.</p></section>'}`;
+}
+
+function renderEventView(event) {
+  const attendees = attendeeRows(event);
+  const paid = paidKeys(event);
+  app.innerHTML = `<div class="event-actions"><a href="#events">‹ 이벤트 목록</a>
+      <a class="button-link" href="${eventEditPage(event)}">이벤트 수정</a></div>
+    <h1>${escape(event.name)}</h1>
     <section class="summary" aria-live="polite">1인당 납부액<strong id="amount"></strong><small id="remainder"></small></section>
-    <section class="between"><span>시행일 ${event.date}</span><strong>총 참여 ${people(event)}명</strong></section>
-    <section><h2>참여자</h2><button id="choose">참여자 선택</button>
-      <p>${roster(event).filter((member) => event.selected.includes(member.id)).map((member) => escape(member.name)).join(' · ')}</p>
-      ${event.extras.map((extra) => `<p class="between"><span>${escape(extra.name)} · ${extra.count}명</span>
-        <button class="secondary" data-remove="${extra.id}">제외</button></p>`).join('')}
-      <details><summary>추가 참여자 등록</summary><form id="extra">
-        <label>등록 방식<select id="extra-kind" name="kind"><option value="person">이름</option><option value="group">단체명과 인원</option></select></label>
-        ${field('이름 또는 단체명', 'name', 'required maxlength="80"')}
-        <div id="group-size" hidden>${field('단체 인원', 'count', 'type="number" min="1" max="100000" step="1"', '1')}</div>
-        <button>이 이벤트에 추가</button></form></details>
+    <section class="between"><span>시행일 ${escape(event.date)}</span><strong>총 참여 ${people(event)}명</strong></section>
+    <section><h2>참여자</h2>
+      <p class="attendee-inline">${participantNames(event).map(escape).join(', ') || '참여자를 선택하지 않았어요.'}</p>
+      <p><small>입금 ${paidCount(event)} / ${people(event)}명 완료</small></p>
     </section>
-    <form id="cost"><h2>정산과 입금 마감</h2>
-      ${field('총 지출액 (원)', 'expense', 'type="number" inputmode="numeric" min="0" max="999999999999" step="1"', event.expense)}
-      ${field('입금 마감 날짜', 'deadline', 'type="date"', event.deadline)}
-      ${field('마감 시간 (선택, 한국 시간)', 'time', 'type="time"', event.time)}
-      <p>${deadline(event) ? '입금 마감 ' + deadline(event) : '입금 마감 미정'}</p>
-      <button>저장</button>
-    </form>
+    <section><h2>입금 현황</h2>
+      ${attendees.length ? `<ul class="payment-status-list">${attendees.map((attendee) =>
+        `<li><span>${escape(attendee.name)}${attendee.count > 1 ? ` · ${attendee.count}명` : ''}</span>
+          <strong class="${paid.has(attendee.key) ? 'paid-status' : 'unpaid-status'}">${paid.has(attendee.key) ? '입금 완료' : '미입금'}</strong></li>`).join('')}</ul>` : '<p>참여자를 먼저 등록해 주세요.</p>'}
+      <a class="button-link secondary-link" href="${eventEditPage(event)}">입금 확인 수정</a>
+    </section>
+    <section><h2>정산과 입금 마감</h2>
+      <p>총 지출액: ${event.expense === '' ? '미입력' : won(Number(event.expense))}</p>
+      <p>${deadline(event) ? '입금 마감 ' + escape(deadline(event)) : '입금 마감 미정'}</p>
+    </section>
     <section><h2>입금 공지</h2>${state.templates.length ? `
       <label>템플릿<select id="template">${state.templates.map((template) =>
-        `<option value="${template.id}">${escape(template.name)}</option>`).join('')}</select></label>
-      <label>공지 미리보기<textarea id="notice"></textarea></label>
+        `<option value="${escape(template.id)}">${escape(template.name)}</option>`).join('')}</select></label>
+      <label for="notice">공지 미리보기</label><textarea id="notice" readonly rows="12" aria-label="공지 미리보기"></textarea>
       <button id="copy" ${settlement(event) ? '' : 'disabled'}>공지 복사</button>`
       : '<p><a href="#settings">설정에서 공지 템플릿을 등록해 주세요.</a></p>'}
     </section>`;
   drawSummary(event);
-  const update = (edit, refresh) => change((next) => edit(next.events.find((item) => item.id === event.id)), refresh);
-  $('#extra-kind').onchange = () => { $('#group-size').hidden = $('#extra-kind').value !== 'group'; };
-  $('#choose').onclick = () => {
-    selection = new Set(event.selected);
-    $('#search').value = '';
-    drawMembers();
-    dialog.showModal();
-  };
-  app.querySelectorAll('[data-remove]').forEach((button) => {
-    button.onclick = () => update((item) => {
-      item.extras = item.extras.filter((extra) => extra.id !== button.dataset.remove);
-    });
-  });
-  bind('#extra', (data) => {
-    const name = data.get('name').trim();
-    const count = data.get('kind') === 'person' ? 1 : Number(data.get('count'));
-    if (!name || !Number.isInteger(count) || count < 1 || count > 100000) return status('이름과 인원수를 확인해 주세요.');
-    update((item) => item.extras.push({ id: id(), name, count }));
-  });
-  const expense = $('#cost [name="expense"]');
-  expense.oninput = () => drawSummary({ ...event, expense: expense.validity.valid ? expense.value : '' });
-  bind('#cost', (data) => {
-    if (data.get('time') && !data.get('deadline')) return status('마감 날짜도 입력해 주세요.');
-    update((item) => Object.assign(item, Object.fromEntries(data)));
-  });
   if ($('#template')) {
     const preview = () => {
       const template = state.templates.find(({ id }) => id === $('#template').value);
-      $('#notice').value = notice(template.body, event, state.profile);
+      $('#notice').value = notice(template.body, event, state.profile, participantNames(event));
     };
     $('#template').onchange = preview;
     preview();
@@ -217,6 +230,86 @@ function renderEvent(event) {
       }
     };
   }
+}
+
+function renderEventEdit(event) {
+  const attendees = attendeeRows(event);
+  const paid = paidKeys(event);
+  app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 이벤트 보기</a></div>
+    <h1>${escape(event.name)} 수정</h1>
+    <form id="event-basics"><h2>이벤트 정보</h2>
+      ${field('이벤트명', 'name', 'required maxlength="100"', event.name)}
+      ${field('시행일', 'date', 'type="date" required', event.date)}
+      <button>이벤트 정보 저장</button>
+    </form>
+    <section><h2>참여자</h2>
+      <button id="choose" type="button">참여자 선택</button>
+      <p class="attendee-inline">${participantNames(event).map(escape).join(', ') || '선택한 참여자가 없어요.'}</p>
+      ${event.extras.map((extra) => `<p class="between"><span>${escape(extra.name)} · ${extra.count}명</span>
+        <button class="secondary" type="button" data-remove="${escape(extra.id)}">제외</button></p>`).join('')}
+      <details><summary>추가 참여자 등록</summary><form id="extra">
+        <label>등록 방식<select id="extra-kind" name="kind"><option value="person">이름</option><option value="group">단체명과 인원</option></select></label>
+        ${field('이름 또는 단체명', 'name', 'required maxlength="80"')}
+        <div id="group-size" hidden>${field('단체 인원', 'count', 'type="number" min="1" max="100000" step="1"', '1')}</div>
+        <button>이 이벤트에 추가</button></form></details>
+    </section>
+    <form id="cost"><h2>정산과 입금 마감</h2>
+      <section class="summary" aria-live="polite">1인당 납부액<strong id="amount"></strong><small id="remainder"></small></section>
+      ${field('총 지출액 (원)', 'expense', 'type="number" inputmode="numeric" min="0" max="999999999999" step="1"', event.expense)}
+      ${field('입금 마감 날짜', 'deadline', 'type="date"', event.deadline)}
+      ${field('마감 시간 (선택, 한국 시간)', 'time', 'type="time"', event.time)}
+      <p>${deadline(event) ? '입금 마감 ' + escape(deadline(event)) : '입금 마감 미정'}</p>
+      <button>정산 정보 저장</button>
+    </form>
+    <form id="payments"><h2>입금 완료 체크</h2>
+      <p>입금 완료한 참여자를 선택한 뒤 저장하세요. 단체 참여자는 인원 전체를 한 번에 체크합니다.</p>
+      ${attendees.length ? `<div class="payment-check-list">${attendees.map((attendee) =>
+        `<label class="payment-check"><input type="checkbox" name="paid" value="${escape(attendee.key)}" ${paid.has(attendee.key) ? 'checked' : ''}>
+          <span>${escape(attendee.name)}${attendee.count > 1 ? ` · ${attendee.count}명 전원` : ''}</span></label>`).join('')}</div>`
+        : '<p>입금 확인 전에 이벤트 참여자를 먼저 등록해 주세요.</p>'}
+      <p><strong>현재 입금 ${paidCount(event)} / ${people(event)}명</strong></p>
+      <button ${attendees.length ? '' : 'disabled'}>입금 현황 저장</button>
+    </form>`;
+  drawSummary(event);
+  const update = (edit) => change((next) => {
+    const item = next.events.find(({ id }) => id === event.id);
+    edit(item);
+    prunePaid(item);
+  });
+  $('#choose').onclick = () => {
+    selection = new Set(event.selected);
+    $('#search').value = '';
+    drawMembers();
+    dialog.showModal();
+  };
+  $('#extra-kind').onchange = () => { $('#group-size').hidden = $('#extra-kind').value !== 'group'; };
+  app.querySelectorAll('[data-remove]').forEach((button) => {
+    button.onclick = () => update((item) => {
+      item.extras = item.extras.filter((extra) => extra.id !== button.dataset.remove);
+    });
+  });
+  bind('#event-basics', (data) => {
+    const name = data.get('name').trim();
+    const date = data.get('date');
+    if (!name || !date) return status('이벤트명과 시행일을 입력해 주세요.');
+    update((item) => Object.assign(item, { name, date }));
+  });
+  bind('#extra', (data) => {
+    const name = data.get('name').trim();
+    const count = data.get('kind') === 'person' ? 1 : Number(data.get('count'));
+    if (!name || !Number.isInteger(count) || count < 1 || count > 100000) return status('이름과 인원수를 확인해 주세요.');
+    update((item) => item.extras.push({ id: id(), name, count }));
+  });
+  const expense = $('#cost [name="expense"]');
+  expense.oninput = () => drawSummary({ ...event, expense: expense.validity.valid ? expense.value : '' });
+  bind('#cost', (data) => {
+    if (data.get('time') && !data.get('deadline')) return status('마감 날짜도 입력해 주세요.');
+    update((item) => Object.assign(item, Object.fromEntries(data)));
+  });
+  bind('#payments', (data) => {
+    const nextPaid = data.getAll('paid');
+    update((item) => { item.paid = nextPaid; });
+  });
 }
 
 function drawMembers() {
@@ -247,7 +340,9 @@ $('#done').onclick = () => {
   const selected = [...selection];
   dialog.close();
   change((next) => {
-    next.events.find(({ id }) => id === event.id).selected = selected;
+    const item = next.events.find(({ id }) => id === event.id);
+    item.selected = selected;
+    prunePaid(item);
   });
 };
 
@@ -261,7 +356,7 @@ function renderSettings() {
     <button>총무 정보 저장</button></form>
     <form id="new-template"><h2>공지 템플릿</h2>
       ${state.templates.length ? `<ul>${state.templates.map((item) => '<li>' + escape(item.name) + '</li>').join('')}</ul>` : '<p>등록한 템플릿이 없어요.</p>'}
-      <p><small>자동 입력 항목 {{이벤트명}} {{시행일}} {{인원}} {{납부액}} {{마감}} {{총무}} {{은행}} {{계좌}} {{예금주}}</small></p>
+      <p><small>자동 입력 항목 {{이벤트명}} {{시행일}} {{인원}} {{참여자명단}} {{납부액}} {{마감}} {{총무}} {{은행}} {{계좌}} {{예금주}}</small></p>
       ${field('템플릿 이름', 'name', 'required')}
       <label>내용<textarea name="body" required></textarea></label><button>템플릿 저장</button>
     </form>
