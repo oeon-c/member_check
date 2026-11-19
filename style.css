@@ -1,5 +1,6 @@
 :root{font-family:system-ui,sans-serif;color:#1d2831;background:#f5f7f7;line-height:1.55;--accent:#045d50}
-*{box-sizing:border-box}
+*{box-sizing:border-box;min-width:0}
+html,body{width:100%;max-width:100%;overflow-x:hidden}
 body{margin:0}
 header,nav,main,#status{max-width:720px;margin:auto;padding:16px}
 header,nav,footer,.between{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -10,7 +11,7 @@ a{color:var(--accent);text-decoration:none}
 nav a{padding:8px 12px;font-weight:700}
 h1,h2,p{margin:0 0 12px}
 small,#mode{color:#465953}
-section,form,.card{background:white;border:1px solid #d8e3df;border-radius:16px;padding:16px;margin:0 0 14px}
+section,form,.card{min-width:0;max-width:100%;background:white;border:1px solid #d8e3df;border-radius:16px;padding:16px;margin:0 0 14px;overflow-wrap:anywhere}
 form form{margin:0}
 .summary{background:#073e36;color:white;border:0}
 .summary strong{display:block;font-size:clamp(1.8rem,8vw,3rem);line-height:1.25}
@@ -51,6 +52,15 @@ dialog::backdrop{background:#14262088}
 .member input{width:20px;min-height:auto;height:20px;accent-color:var(--accent)}
 #status{color:#394f48;overflow-wrap:anywhere}
 .between{flex-wrap:wrap}
+main,#app{min-width:0;max-width:100%;width:100%}
+#app>*{min-width:0;max-width:100%}
+.between>*{min-width:0;max-width:100%}
+details,summary,pre{max-width:100%;overflow-wrap:anywhere;white-space:pre-wrap}
+.template-body{font:inherit;background:#f5f7f7;padding:12px;border-radius:8px}
+#completion{width:min(calc(100% - 32px),420px);margin:auto;border-radius:18px;padding:20px}
+#completion[open]{display:block}
+#completion-form{display:grid;gap:12px;margin:0;padding:0;border:0;background:transparent}
+#completion-form button{justify-self:end;min-width:88px}
 @media(max-width:600px){
   nav{overflow-x:auto;white-space:nowrap}
   nav a{flex:0 0 auto}

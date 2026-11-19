@@ -5,6 +5,7 @@ const $ = (selector) => document.querySelector(selector);
 const app = $('#app');
 const dialog = $('#members');
 const paymentDialog = $('#payment-checks');
+const completionDialog = $('#completion');
 const status = (message) => { $('#status').textContent = message; };
 const escape = (value = '') => String(value).replace(/[&<>"']/g, (char) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -58,15 +59,17 @@ async function save(next) {
   state = next;
 }
 
-async function change(edit, refresh = render) {
+async function change(edit, refresh = render, successMessage = '수정이 완료되었습니다.') {
   if (saving) return;
   saving = true;
   try {
     const next = structuredClone(state);
     edit(next);
     await save(next);
-    status('저장했어요.');
     refresh();
+    status('저장했어요.');
+    $('#completion-message').textContent = successMessage;
+    if (!completionDialog.open) completionDialog.showModal();
   } catch (error) {
     status(error.message || '저장에 실패했어요.');
     if (dialog.open) drawMembers();
@@ -119,7 +122,8 @@ function render() {
   if (location.hash === '#new-event') return renderNewEvent();
   if (location.hash === '#pending') return renderPending();
   if (location.hash === '#roster') return renderRoster();
-  if (location.hash === '#settings') return renderSettings();
+  if (location.hash === '#settings/edit') return renderSettingsEdit();
+  if (location.hash === '#settings') return renderSettingsView();
   app.innerHTML = `<div class="event-actions"><h1>이벤트</h1><a class="button-link" href="#new-event">+ 새 이벤트</a></div>
     ${[...state.events].sort((a, b) => b.date.localeCompare(a.date)).map((item) =>
       `<a class="card between" href="${eventPage(item)}"><strong>${escape(item.name)}</strong>
@@ -321,7 +325,7 @@ function renderEventEdit(event) {
     const item = next.events.find(({ id }) => id === event.id);
     edit(item);
     prunePaid(item);
-  });
+  }, () => { location.hash = eventPage(event); });
   $('#choose').onclick = () => {
     selection = new Set(event.selected);
     $('#search').value = '';
@@ -385,7 +389,7 @@ $('#done').onclick = () => {
     const item = next.events.find(({ id }) => id === event.id);
     item.selected = selected;
     prunePaid(item);
-  });
+  }, () => { location.hash = eventPage(event); });
 };
 
 $('#payment-close').onclick = () => paymentDialog.close();
@@ -403,31 +407,17 @@ bind('#payment-form', (data) => {
   });
 });
 
-function renderSettings() {
+function renderSettingsView() {
   const profile = state.profile;
-  app.innerHTML = `<h1>설정</h1><form id="profile"><h2>현 총무 정보</h2>
-    ${field('총무 이름', 'name', 'required', profile.name)}
-    ${field('은행', 'bank', 'required', profile.bank)}
-    ${field('계좌번호', 'account', 'required', profile.account)}
-    ${field('예금주', 'holder', 'required', profile.holder)}
-    <button>총무 정보 저장</button></form>
-    <form id="new-template"><h2>공지 템플릿</h2>
-      ${state.templates.length ? `<ul>${state.templates.map((item) => '<li>' + escape(item.name) + '</li>').join('')}</ul>` : '<p>등록한 템플릿이 없어요.</p>'}
-      <p><small>자동 입력 항목 {{이벤트명}} {{시행일}} {{인원}} {{참여자명단}} {{납부액}} {{마감}} {{총무}} {{은행}} {{계좌}} {{예금주}}</small></p>
-      ${field('템플릿 이름', 'name', 'required')}
-      <label>내용<textarea name="body" required></textarea></label><button>템플릿 저장</button>
-    </form>
+  app.innerHTML = `<div class="event-actions"><h1>설정</h1><a class="button-link" href="#settings/edit">설정 수정</a></div>
+    <section><h2>총무 정보</h2>
+      <p>이름: ${escape(profile.name || '미설정')}</p><p>은행: ${escape(profile.bank || '미설정')}</p>
+      <p>계좌번호: ${escape(profile.account || '미설정')}</p><p>예금주: ${escape(profile.holder || '미설정')}</p></section>
+    <section><h2>공지 템플릿</h2>
+      ${state.templates.length ? state.templates.map((item) => `<details><summary>${escape(item.name)}</summary><pre class="template-body">${escape(item.body)}</pre></details>`).join('') : '<p>등록한 템플릿이 없어요.</p>'}
+      <p><small>자동 입력 항목: {{이벤트명}} {{시행일}} {{인원}} {{참여자명단}} {{인당비용}} {{납부액}} {{마감}} {{총무}} {{은행}} {{계좌}} {{예금주}}</small></p>
+    </section>
     ${local ? '' : '<section><h2>인수인계</h2><p>링크를 만들고 후임 총무에게 직접 전달해 주세요. 후임이 링크에서 수락하면 관리 권한이 이전돼요.</p><button id="invite">인수인계 링크 만들기</button><label>인수인계 링크<input id="invite-url" readonly></label><button class="secondary" id="logout">로그아웃</button></section>'}`;
-  bind('#profile', (data) => {
-    const values = Object.fromEntries([...data].map(([key, value]) => [key, value.trim()]));
-    if (Object.values(values).some((value) => !value)) return status('총무 정보를 모두 입력해 주세요.');
-    change((next) => { next.profile = values; });
-  });
-  bind('#new-template', (data) => {
-    const [name, body] = ['name', 'body'].map((key) => data.get(key).trim());
-    if (!name || !body) return status('템플릿 이름과 내용을 입력해 주세요.');
-    change((next) => next.templates.push({ id: id(), name, body }));
-  });
   if (!local) {
     $('#logout').onclick = async () => { await client.auth.signOut(); location.reload(); };
     $('#invite').onclick = async () => {
@@ -439,6 +429,33 @@ function renderSettings() {
       $('#invite-url').select();
     };
   }
+}
+
+function renderSettingsEdit() {
+  const profile = state.profile;
+  app.innerHTML = `<div class="event-actions"><a href="#settings">‹ 설정 보기</a></div><h1>설정 수정</h1><form id="profile"><h2>총무 정보</h2>
+    ${field('총무 이름', 'name', 'required', profile.name)}
+    ${field('은행', 'bank', 'required', profile.bank)}
+    ${field('계좌번호', 'account', 'required', profile.account)}
+    ${field('예금주', 'holder', 'required', profile.holder)}
+    <button>총무 정보 저장</button></form>
+    <form id="new-template"><h2>공지 템플릿</h2>
+      ${state.templates.length ? `<ul>${state.templates.map((item) => '<li>' + escape(item.name) + '</li>').join('')}</ul>` : '<p>등록한 템플릿이 없어요.</p>'}
+      <p><small>자동 입력 항목 {{이벤트명}} {{시행일}} {{인원}} {{참여자명단}} {{인당비용}} {{납부액}} {{마감}} {{총무}} {{은행}} {{계좌}} {{예금주}}</small></p>
+      ${field('템플릿 이름', 'name', 'required')}
+      <label>내용<textarea name="body" required></textarea></label><button>템플릿 저장</button>
+    </form>
+    `;
+  bind('#profile', (data) => {
+    const values = Object.fromEntries([...data].map(([key, value]) => [key, value.trim()]));
+    if (Object.values(values).some((value) => !value)) return status('총무 정보를 모두 입력해 주세요.');
+    change((next) => { next.profile = values; }, () => { location.hash = '#settings'; });
+  });
+  bind('#new-template', (data) => {
+    const [name, body] = ['name', 'body'].map((key) => data.get(key).trim());
+    if (!name || !body) return status('템플릿 이름과 내용을 입력해 주세요.');
+    change((next) => next.templates.push({ id: id(), name, body }), () => { location.hash = '#settings'; });
+  });
 }
 
 async function start() {

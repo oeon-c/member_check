@@ -17,6 +17,7 @@ export function notice(template, event, profile, participantNames = []) {
   const fields = {
     이벤트명: event.name, 시행일: event.date, 인원: people(event),
     참여자명단: participantNames.join(', '),
+    인당비용: result ? won(result.amount) : '',
     납부액: result ? won(result.amount) : '', 마감: deadline(event),
     총무: profile.name, 은행: profile.bank, 계좌: profile.account, 예금주: profile.holder,
   };
