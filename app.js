@@ -208,9 +208,14 @@ function renderRoster() {
 
 function drawSummary(event) {
   const result = settlement(event);
-  $('#amount').textContent = result ? won(result.total) : '—';
-  $('#remainder').textContent = result ? `인당 ${won(result.amount)}${result.remainder ? ' · 기존 총액 차액 ' + won(result.remainder) : ''}`
-    : people(event) ? '인당 납부액을 입력해 주세요.' : '참여자를 먼저 선택해 주세요.';
+  const isSettlementCheck = eventKind(event) === 'settlement';
+  $('#summary-title').textContent = isSettlementCheck ? '총 납부액' : '인당 납부액';
+  $('#amount').textContent = result ? won(isSettlementCheck ? result.total : result.amount) : '—';
+  $('#remainder').textContent = result
+    ? isSettlementCheck
+      ? `인당 ${won(result.amount)}`
+      : `총 납부액 ${won(result.total)}${result.remainder ? ' · 버림 차액 ' + won(result.remainder) : ''}`
+    : people(event) ? isSettlementCheck ? '인당 납부액을 입력해 주세요.' : '총 납부액을 입력해 주세요.' : '참여자를 먼저 선택해 주세요.';
 }
 
 function renderPending() {
@@ -231,7 +236,7 @@ function renderEventView(event) {
   app.innerHTML = `<div class="event-actions"><a href="#events">‹ 행사·정산 목록</a>
       <a class="button-link" href="${eventEditPage(event)}">이벤트 수정</a></div>
     <h1>${escape(event.name)}</h1>
-    <section class="summary" aria-live="polite">총 납부액<strong id="amount"></strong><small id="remainder"></small></section>
+    <section class="summary" aria-live="polite"><span id="summary-title"></span><strong id="amount"></strong><small id="remainder"></small></section>
     <section class="between"><span class="kind-label">${eventKindLabel(event)}</span>${eventKind(event) === 'event' ? `<span>시행일 ${escape(event.date)}</span>` : ''}<strong>총 참여 ${people(event)}명</strong></section>
     <section><h2>참여자</h2>
       <p class="attendee-inline">${participantNames(event).map(escape).join(', ') || '참여자를 선택하지 않았어요.'}</p>
@@ -318,8 +323,8 @@ function updatePaymentDialogSummary() {
 function renderEventEdit(event) {
   if (!eventDraft || eventDraft.id !== event.id) eventDraft = structuredClone(event);
   const draft = eventDraft;
-  if (draft.amountPerPerson === undefined) draft.amountPerPerson = settlement(draft)?.amount ?? '';
-  const initialPerPerson = draft.amountPerPerson;
+  if (eventKind(draft) === 'settlement' && draft.amountPerPerson === undefined)
+    draft.amountPerPerson = settlement(draft)?.amount ?? '';
   app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 항목 보기</a></div>
     <h1>${escape(draft.name)} 수정</h1>
     <form id="event-editor">
@@ -341,8 +346,10 @@ function renderEventEdit(event) {
         </details>
       </section>
       <section><h2>정산과 입금 마감</h2>
-        <div class="summary" aria-live="polite">총 납부액<strong id="amount"></strong><small id="remainder"></small></div>
-        ${field('인당 납부액 (원)', 'amountPerPerson', 'type="number" inputmode="numeric" min="0" max="999999999999" step="1" required', initialPerPerson)}
+        <div class="summary" aria-live="polite"><span id="summary-title"></span><strong id="amount"></strong><small id="remainder"></small></div>
+        ${eventKind(draft) === 'settlement'
+          ? field('인당 납부액 (원)', 'amountPerPerson', 'type="number" inputmode="numeric" min="0" max="999999999999" step="1" required', draft.amountPerPerson)
+          : field('총 납부액 (원)', 'expense', 'type="number" inputmode="numeric" min="0" max="999999999999" step="1" required', draft.expense)}
         ${field('입금 마감 날짜', 'deadline', `type="date" ${eventKind(draft) === 'settlement' ? 'required' : ''}`, draft.deadline)}
         ${field('마감 시간 (선택, 한국 시간)', 'time', 'type="time"', draft.time)}
         <p>${deadline(draft) ? '입금 마감 ' + escape(deadline(draft)) : '입금 마감 미정'}</p>
@@ -356,8 +363,12 @@ function renderEventEdit(event) {
     if (eventKind(draft) === 'event') draft.date = data.get('date') ?? draft.date;
     draft.deadline = data.get('deadline') ?? draft.deadline;
     draft.time = data.get('time') ?? draft.time;
-    const amount = data.get('amountPerPerson');
-    draft.amountPerPerson = amount === '' ? '' : Number(amount);
+    if (eventKind(draft) === 'settlement') {
+      const amount = data.get('amountPerPerson');
+      draft.amountPerPerson = amount === '' ? '' : Number(amount);
+    } else {
+      draft.expense = data.get('expense') ?? draft.expense;
+    }
   };
   $('#event-editor').addEventListener('input', () => {
     syncDraftFromForm();
@@ -391,14 +402,21 @@ function renderEventEdit(event) {
   bind('#event-editor', (data) => {
     const name = data.get('name').trim();
     const date = data.get('date');
-    const amountPerPerson = data.get('amountPerPerson');
     if (!name || (eventKind(draft) === 'event' && !date)) return status('이름과 행사 시행일을 확인해 주세요.');
-    if (amountPerPerson === '' || !Number.isFinite(Number(amountPerPerson)) || Number(amountPerPerson) < 0) return status('인당 납부액을 확인해 주세요.');
+    const amount = eventKind(draft) === 'settlement' ? data.get('amountPerPerson') : data.get('expense');
+    if (amount === '' || !Number.isFinite(Number(amount)) || Number(amount) < 0)
+      return status(eventKind(draft) === 'settlement' ? '인당 납부액을 확인해 주세요.' : '총 납부액을 확인해 주세요.');
     if (data.get('time') && !data.get('deadline')) return status('마감 날짜도 입력해 주세요.');
     const updated = structuredClone(draft);
     Object.assign(updated, { name, date: eventKind(draft) === 'event' ? date : '',
-      amountPerPerson: Number(amountPerPerson), deadline: data.get('deadline'), time: data.get('time') });
-    updated.expense = Number(amountPerPerson) * people(updated);
+      deadline: data.get('deadline'), time: data.get('time') });
+    if (eventKind(draft) === 'settlement') {
+      updated.amountPerPerson = Number(amount);
+      updated.expense = '';
+    } else {
+      updated.expense = Number(amount);
+      delete updated.amountPerPerson;
+    }
     prunePaid(updated);
     change((next) => {
       const index = next.events.findIndex(({ id }) => id === event.id);

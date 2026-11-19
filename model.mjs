@@ -5,7 +5,7 @@ export const people = (event) =>
 export function settlement(event) {
   const count = people(event);
   if (!count) return null;
-  if (event.amountPerPerson !== undefined && event.amountPerPerson !== '') {
+  if (event.kind === 'settlement' && event.amountPerPerson !== undefined && event.amountPerPerson !== '') {
     const amount = Number(event.amountPerPerson);
     if (!Number.isFinite(amount)) return null;
     return { amount, total: amount * count, remainder: 0 };
