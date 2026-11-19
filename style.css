@@ -21,12 +21,20 @@ form form{margin:0}
 .secondary-link{background:#e6efec;color:#164a40;margin-top:8px}
 .attendee-inline{overflow-wrap:anywhere}
 .progress-label{display:block;margin-top:8px;font-weight:750;color:var(--accent)}
-.payment-status-list,.payment-check-list{list-style:none;margin:0;padding:0}
+.payment-status-list{list-style:none;margin:0;padding:0}
 .payment-status-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #e6efec}
 .paid-status{color:#087044}
 .unpaid-status{color:#8a4a19}
-.payment-check{display:flex;align-items:center;gap:12px;min-height:48px;border-bottom:1px solid #e6efec;cursor:pointer}
-.payment-check input{width:22px;height:22px;min-height:22px;accent-color:var(--accent)}
+.payment-check-row{display:flex;align-items:center;gap:12px;min-height:50px;margin:0;padding:8px 4px;border-bottom:1px solid #e6efec;cursor:pointer}
+.payment-check-row input{flex:0 0 22px;width:22px;height:22px;min-height:22px;accent-color:var(--accent)}
+.payment-check-row span{flex:1}
+.payment-check-row strong{font-size:.9rem;color:#8a4a19}
+.payment-check-row.is-paid strong{color:#087044}
+#payment-checks{width:min(100%,560px);margin:auto;border-radius:20px}
+#payment-checks[open]{display:block}
+#payment-form{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:10px;max-height:80dvh;margin:0;padding:0;border:0}
+#payment-rows{min-height:0;max-height:55dvh;overflow:auto}
+#payment-total{margin-right:auto}
 #notice{min-height:320px;font-size:1.02rem;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;background:#fbfdfc}
 label{display:block;margin-bottom:12px;font-weight:650}
 input,textarea,select,button{font:inherit;min-height:44px;border-radius:9px}

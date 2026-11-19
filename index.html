@@ -14,5 +14,13 @@
   <div id="member-list"></div>
   <footer><strong id="count"></strong><button id="done">완료</button></footer>
 </dialog>
+<dialog id="payment-checks" aria-labelledby="payment-title">
+  <form id="payment-form">
+    <h2 id="payment-title">입금 확인</h2>
+    <p>입금 완료한 사람을 체크한 뒤 저장하세요. 체크한 사람은 목록 아래로 이동합니다.</p>
+    <div id="payment-rows"></div>
+    <footer><strong id="payment-total"></strong><button id="payment-close" class="secondary" type="button">취소</button><button>저장</button></footer>
+  </form>
+</dialog>
 <script type="module" src="./app.js"></script>
 </html>

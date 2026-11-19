@@ -4,6 +4,7 @@ import { newState, id, people, settlement, won, deadline, notice } from './model
 const $ = (selector) => document.querySelector(selector);
 const app = $('#app');
 const dialog = $('#members');
+const paymentDialog = $('#payment-checks');
 const status = (message) => { $('#status').textContent = message; };
 const escape = (value = '') => String(value).replace(/[&<>"']/g, (char) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -69,11 +70,13 @@ async function change(edit, refresh = render) {
   } catch (error) {
     status(error.message || '저장에 실패했어요.');
     if (dialog.open) drawMembers();
+    if (paymentDialog.open && currentEvent()) drawPaymentDialog(currentEvent());
   } finally { saving = false; }
 }
 
 const eventPage = (event) => '#event/' + event.id;
 const eventEditPage = (event) => eventPage(event) + '/edit';
+const eventNoticePage = (event) => eventPage(event) + '/notice';
 const currentEvent = () => {
   const match = location.hash.match(/^#event\/([^/]+)/);
   return match ? state.events.find((event) => event.id === match[1]) : undefined;
@@ -92,6 +95,10 @@ const paidCount = (event) => {
   const paid = paidKeys(event);
   return attendeeRows(event).reduce((count, attendee) => count + (paid.has(attendee.key) ? attendee.count : 0), 0);
 };
+const paymentRows = (event) => {
+  const paid = paidKeys(event);
+  return attendeeRows(event).sort((a, b) => Number(paid.has(a.key)) - Number(paid.has(b.key)));
+};
 const participantNames = (event) => attendeeRows(event).map(({ name, count }) =>
   count > 1 ? `${name} (${count}명)` : name);
 function prunePaid(event) {
@@ -104,24 +111,33 @@ const field = (label, name, extra = '', value = '') =>
 function render() {
   $('#nav').hidden = false;
   const event = currentEvent();
-  if (event) return location.hash.endsWith('/edit') ? renderEventEdit(event) : renderEventView(event);
+  if (event) {
+    if (location.hash.endsWith('/edit')) return renderEventEdit(event);
+    if (location.hash.endsWith('/notice')) return renderEventNotice(event);
+    return renderEventView(event);
+  }
+  if (location.hash === '#new-event') return renderNewEvent();
   if (location.hash === '#pending') return renderPending();
   if (location.hash === '#roster') return renderRoster();
   if (location.hash === '#settings') return renderSettings();
-  app.innerHTML = `<h1>이벤트</h1>
-    <form id="new-event"><h2>새 이벤트</h2>
-      ${field('이벤트명', 'name', 'required maxlength="100"')}
-      ${field('시행일', 'date', 'type="date" required')}
-      <label>학기<select name="semester" required>${[...state.semesters].reverse().map((term) =>
-        `<option value="${term.id}">${escape(term.name)}</option>`).join('')}</select></label>
-      <button ${state.semesters.length ? '' : 'disabled'}>이벤트 만들기</button>
-      ${state.semesters.length ? '' : '<p><a href="#roster">학기 명단을 먼저 등록해 주세요.</a></p>'}
-    </form>
+  app.innerHTML = `<div class="event-actions"><h1>이벤트</h1><a class="button-link" href="#new-event">+ 새 이벤트</a></div>
     ${[...state.events].sort((a, b) => b.date.localeCompare(a.date)).map((item) =>
       `<a class="card between" href="${eventPage(item)}"><strong>${escape(item.name)}</strong>
         <small>${item.date} · ${people(item)}명 ${settlement(item) ? '· ' + won(settlement(item).amount) : '· 정산 금액 미입력'}
           ${people(item) ? '· 입금 ' + paidCount(item) + '/' + people(item) + '명' : ''}</small></a>`).join('')
       || '<p>등록한 이벤트가 없어요.</p>'}`;
+}
+
+function renderNewEvent() {
+  app.innerHTML = `<div class="event-actions"><a href="#events">‹ 이벤트 목록</a></div>
+    <h1>새 이벤트</h1><form id="new-event">
+      ${field('이벤트명', 'name', 'required maxlength="100"')}
+      ${field('시행일', 'date', 'type="date" required')}
+      <label>학기<select name="semester" required>${[...state.semesters].reverse().map((term) =>
+        `<option value="${escape(term.id)}">${escape(term.name)}</option>`).join('')}</select></label>
+      <button ${state.semesters.length ? '' : 'disabled'}>이벤트 만들기</button>
+      ${state.semesters.length ? '' : '<p><a href="#roster">학기 명단을 먼저 등록해 주세요.</a></p>'}
+    </form>`;
   bind('#new-event', (data) => {
     const name = data.get('name').trim();
     if (!name) return status('이벤트명을 입력해 주세요.');
@@ -184,7 +200,7 @@ function renderPending() {
 }
 
 function renderEventView(event) {
-  const attendees = attendeeRows(event);
+  const attendees = paymentRows(event);
   const paid = paidKeys(event);
   app.innerHTML = `<div class="event-actions"><a href="#events">‹ 이벤트 목록</a>
       <a class="button-link" href="${eventEditPage(event)}">이벤트 수정</a></div>
@@ -199,20 +215,31 @@ function renderEventView(event) {
       ${attendees.length ? `<ul class="payment-status-list">${attendees.map((attendee) =>
         `<li><span>${escape(attendee.name)}${attendee.count > 1 ? ` · ${attendee.count}명` : ''}</span>
           <strong class="${paid.has(attendee.key) ? 'paid-status' : 'unpaid-status'}">${paid.has(attendee.key) ? '입금 완료' : '미입금'}</strong></li>`).join('')}</ul>` : '<p>참여자를 먼저 등록해 주세요.</p>'}
-      <a class="button-link secondary-link" href="${eventEditPage(event)}">입금 확인 수정</a>
+      <button id="payment-open" type="button" ${attendees.length ? '' : 'disabled'}>입금 확인</button>
     </section>
     <section><h2>정산과 입금 마감</h2>
       <p>총 지출액: ${event.expense === '' ? '미입력' : won(Number(event.expense))}</p>
       <p>${deadline(event) ? '입금 마감 ' + escape(deadline(event)) : '입금 마감 미정'}</p>
     </section>
-    <section><h2>입금 공지</h2>${state.templates.length ? `
+    <section><h2>입금 공지</h2><p>공지 확인과 복사는 별도 화면에서 할 수 있어요.</p>
+      <a class="button-link" href="${eventNoticePage(event)}">입금 공지 열기</a></section>`;
+  drawSummary(event);
+  $('#payment-open').onclick = () => {
+    drawPaymentDialog(event);
+    paymentDialog.showModal();
+  };
+}
+
+function renderEventNotice(event) {
+  app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 이벤트 보기</a>
+      <a class="button-link" href="${eventEditPage(event)}">이벤트 수정</a></div>
+    <h1>${escape(event.name)} 입금 공지</h1>
+    ${state.templates.length ? `<section>
       <label>템플릿<select id="template">${state.templates.map((template) =>
         `<option value="${escape(template.id)}">${escape(template.name)}</option>`).join('')}</select></label>
       <label for="notice">공지 미리보기</label><textarea id="notice" readonly rows="12" aria-label="공지 미리보기"></textarea>
-      <button id="copy" ${settlement(event) ? '' : 'disabled'}>공지 복사</button>`
-      : '<p><a href="#settings">설정에서 공지 템플릿을 등록해 주세요.</a></p>'}
-    </section>`;
-  drawSummary(event);
+      <button id="copy" ${settlement(event) ? '' : 'disabled'}>공지 복사</button>
+    </section>` : '<section><p>공지 템플릿이 없어요.</p><a href="#settings">설정에서 템플릿 등록</a></section>'}`;
   if ($('#template')) {
     const preview = () => {
       const template = state.templates.find(({ id }) => id === $('#template').value);
@@ -232,9 +259,37 @@ function renderEventView(event) {
   }
 }
 
-function renderEventEdit(event) {
-  const attendees = attendeeRows(event);
+function drawPaymentDialog(event) {
+  const attendees = paymentRows(event);
   const paid = paidKeys(event);
+  $('#payment-rows').innerHTML = attendees.map((attendee) =>
+    `<label class="payment-check-row ${paid.has(attendee.key) ? 'is-paid' : ''}">
+      <input type="checkbox" name="paid" value="${escape(attendee.key)}" data-count="${attendee.count}" ${paid.has(attendee.key) ? 'checked' : ''}>
+      <span>${escape(attendee.name)}${attendee.count > 1 ? ` · ${attendee.count}명 전원` : ''}</span>
+      <strong>${paid.has(attendee.key) ? '입금 완료' : '미입금'}</strong>
+    </label>`).join('') || '<p>확인할 참여자가 없어요.</p>';
+  updatePaymentDialogSummary();
+  $('#payment-rows').onchange = (event) => {
+    if (event.target.name !== 'paid') return;
+    const row = event.target.closest('.payment-check-row');
+    row.classList.toggle('is-paid', event.target.checked);
+    row.querySelector('strong').textContent = event.target.checked ? '입금 완료' : '미입금';
+    const rows = [...$('#payment-rows').querySelectorAll('.payment-check-row')]
+      .sort((a, b) => Number(a.querySelector('[name="paid"]').checked) - Number(b.querySelector('[name="paid"]').checked));
+    rows.forEach((item) => $('#payment-rows').append(item));
+    updatePaymentDialogSummary();
+  };
+}
+
+function updatePaymentDialogSummary() {
+  const checkedCount = [...$('#payment-rows').querySelectorAll('[name="paid"]:checked')]
+    .reduce((total, checkbox) => total + Number(checkbox.dataset.count), 0);
+  const totalCount = [...$('#payment-rows').querySelectorAll('[name="paid"]')]
+    .reduce((total, checkbox) => total + Number(checkbox.dataset.count), 0);
+  $('#payment-total').textContent = `입금 ${checkedCount} / ${totalCount}명 완료`;
+}
+
+function renderEventEdit(event) {
   app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 이벤트 보기</a></div>
     <h1>${escape(event.name)} 수정</h1>
     <form id="event-basics"><h2>이벤트 정보</h2>
@@ -260,15 +315,6 @@ function renderEventEdit(event) {
       ${field('마감 시간 (선택, 한국 시간)', 'time', 'type="time"', event.time)}
       <p>${deadline(event) ? '입금 마감 ' + escape(deadline(event)) : '입금 마감 미정'}</p>
       <button>정산 정보 저장</button>
-    </form>
-    <form id="payments"><h2>입금 완료 체크</h2>
-      <p>입금 완료한 참여자를 선택한 뒤 저장하세요. 단체 참여자는 인원 전체를 한 번에 체크합니다.</p>
-      ${attendees.length ? `<div class="payment-check-list">${attendees.map((attendee) =>
-        `<label class="payment-check"><input type="checkbox" name="paid" value="${escape(attendee.key)}" ${paid.has(attendee.key) ? 'checked' : ''}>
-          <span>${escape(attendee.name)}${attendee.count > 1 ? ` · ${attendee.count}명 전원` : ''}</span></label>`).join('')}</div>`
-        : '<p>입금 확인 전에 이벤트 참여자를 먼저 등록해 주세요.</p>'}
-      <p><strong>현재 입금 ${paidCount(event)} / ${people(event)}명</strong></p>
-      <button ${attendees.length ? '' : 'disabled'}>입금 현황 저장</button>
     </form>`;
   drawSummary(event);
   const update = (edit) => change((next) => {
@@ -306,10 +352,6 @@ function renderEventEdit(event) {
     if (data.get('time') && !data.get('deadline')) return status('마감 날짜도 입력해 주세요.');
     update((item) => Object.assign(item, Object.fromEntries(data)));
   });
-  bind('#payments', (data) => {
-    const nextPaid = data.getAll('paid');
-    update((item) => { item.paid = nextPaid; });
-  });
 }
 
 function drawMembers() {
@@ -345,6 +387,21 @@ $('#done').onclick = () => {
     prunePaid(item);
   });
 };
+
+$('#payment-close').onclick = () => paymentDialog.close();
+bind('#payment-form', (data) => {
+  const event = currentEvent();
+  if (!event) return;
+  const paid = data.getAll('paid');
+  change((next) => {
+    const item = next.events.find(({ id }) => id === event.id);
+    item.paid = paid;
+    prunePaid(item);
+  }, () => {
+    paymentDialog.close();
+    render();
+  });
+});
 
 function renderSettings() {
   const profile = state.profile;
