@@ -4,9 +4,15 @@ export const people = (event) =>
   event.selected.length + event.extras.reduce((total, extra) => total + extra.count, 0);
 export function settlement(event) {
   const count = people(event);
-  if (event.expense === '' || !count) return null;
+  if (!count) return null;
+  if (event.amountPerPerson !== undefined && event.amountPerPerson !== '') {
+    const amount = Number(event.amountPerPerson);
+    if (!Number.isFinite(amount)) return null;
+    return { amount, total: amount * count, remainder: 0 };
+  }
+  if (event.expense === '' || event.expense === undefined || event.expense === null) return null;
   const amount = Math.floor(Number(event.expense) / count);
-  return { amount, remainder: Number(event.expense) - amount * count };
+  return { amount, total: Number(event.expense), remainder: Number(event.expense) - amount * count };
 }
 export const won = (value) => Number(value).toLocaleString('ko-KR') + '원';
 export const deadline = (event) => event.deadline

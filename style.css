@@ -20,6 +20,7 @@ form form{margin:0}
 .event-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
 .button-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:9px;padding:8px 14px;background:var(--accent);color:white;font-weight:750}
 .kind-label{display:inline-flex;align-items:center;border-radius:999px;padding:2px 9px;background:#e6efec;color:#164a40;font-weight:750}
+.save-all{width:100%;margin:4px 0 16px}
 .secondary-link{background:#e6efec;color:#164a40;margin-top:8px}
 .attendee-inline{overflow-wrap:anywhere}
 .progress-label{display:block;margin-top:8px;font-weight:750;color:var(--accent)}

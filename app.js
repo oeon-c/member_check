@@ -15,6 +15,7 @@ let state = newState();
 let client, club, session;
 let saving = false;
 let selection = new Set();
+let eventDraft = null;
 
 // iOS Safari changes the visual viewport when its software keyboard opens.
 // Keep the focused field inside that visible area after focus and viewport changes.
@@ -115,6 +116,7 @@ const eventKindLabel = (event) => eventKind(event) === 'settlement' ? '정산 �
 const eventSortDate = (event) => event.date || event.deadline || '';
 
 function render() {
+  if (!location.hash.endsWith('/edit')) eventDraft = null;
   $('#nav').hidden = false;
   const event = currentEvent();
   if (event) {
@@ -206,9 +208,9 @@ function renderRoster() {
 
 function drawSummary(event) {
   const result = settlement(event);
-  $('#amount').textContent = result ? won(result.amount) : '—';
-  $('#remainder').textContent = result ? '버림 차액 ' + won(result.remainder)
-    : people(event) ? '총 지출액을 입력해 주세요.' : '참여자를 먼저 선택해 주세요.';
+  $('#amount').textContent = result ? won(result.total) : '—';
+  $('#remainder').textContent = result ? `인당 ${won(result.amount)}${result.remainder ? ' · 기존 총액 차액 ' + won(result.remainder) : ''}`
+    : people(event) ? '인당 납부액을 입력해 주세요.' : '참여자를 먼저 선택해 주세요.';
 }
 
 function renderPending() {
@@ -229,7 +231,7 @@ function renderEventView(event) {
   app.innerHTML = `<div class="event-actions"><a href="#events">‹ 행사·정산 목록</a>
       <a class="button-link" href="${eventEditPage(event)}">이벤트 수정</a></div>
     <h1>${escape(event.name)}</h1>
-    <section class="summary" aria-live="polite">1인당 납부액<strong id="amount"></strong><small id="remainder"></small></section>
+    <section class="summary" aria-live="polite">총 납부액<strong id="amount"></strong><small id="remainder"></small></section>
     <section class="between"><span class="kind-label">${eventKindLabel(event)}</span>${eventKind(event) === 'event' ? `<span>시행일 ${escape(event.date)}</span>` : ''}<strong>총 참여 ${people(event)}명</strong></section>
     <section><h2>참여자</h2>
       <p class="attendee-inline">${participantNames(event).map(escape).join(', ') || '참여자를 선택하지 않았어요.'}</p>
@@ -242,7 +244,7 @@ function renderEventView(event) {
       <button id="payment-open" type="button" ${attendees.length ? '' : 'disabled'}>입금 확인</button>
     </section>
     <section><h2>정산과 입금 마감</h2>
-      <p>총 지출액: ${event.expense === '' ? '미입력' : won(Number(event.expense))}</p>
+      <p>총 납부액: ${settlement(event) ? won(settlement(event).total) : '미입력'}</p>
       <p>${deadline(event) ? '입금 마감 ' + escape(deadline(event)) : '입금 마감 미정'}</p>
     </section>
     <section><h2>입금 공지</h2><p>공지 확인과 복사는 별도 화면에서 할 수 있어요.</p>
@@ -314,69 +316,97 @@ function updatePaymentDialogSummary() {
 }
 
 function renderEventEdit(event) {
+  if (!eventDraft || eventDraft.id !== event.id) eventDraft = structuredClone(event);
+  const draft = eventDraft;
+  if (draft.amountPerPerson === undefined) draft.amountPerPerson = settlement(draft)?.amount ?? '';
+  const initialPerPerson = draft.amountPerPerson;
   app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 항목 보기</a></div>
-    <h1>${escape(event.name)} 수정</h1>
-    <form id="event-basics"><h2>항목 정보</h2>
-      ${field('이름', 'name', 'required maxlength="100"', event.name)}
-      <p>종류: <strong>${eventKindLabel(event)}</strong></p><input type="hidden" name="kind" value="${eventKind(event)}">
-      ${eventKind(event) === 'event' ? field('시행일', 'date', 'type="date" required', event.date || '') : '<input type="hidden" name="date" value="">'}
-      <button>항목 정보 저장</button>
-    </form>
-    <section><h2>참여자</h2>
-      <button id="choose" type="button">참여자 선택</button>
-      <p class="attendee-inline">${participantNames(event).map(escape).join(', ') || '선택한 참여자가 없어요.'}</p>
-      ${event.extras.map((extra) => `<p class="between"><span>${escape(extra.name)} · ${extra.count}명</span>
-        <button class="secondary" type="button" data-remove="${escape(extra.id)}">제외</button></p>`).join('')}
-      <details><summary>추가 참여자 등록</summary><form id="extra">
-        <label>등록 방식<select id="extra-kind" name="kind"><option value="person">이름</option><option value="group">단체명과 인원</option></select></label>
-        ${field('이름 또는 단체명', 'name', 'required maxlength="80"')}
-        <div id="group-size" hidden>${field('단체 인원', 'count', 'type="number" min="1" max="100000" step="1"', '1')}</div>
-        <button>이 이벤트에 추가</button></form></details>
-    </section>
-    <form id="cost"><h2>정산과 입금 마감</h2>
-      <section class="summary" aria-live="polite">1인당 납부액<strong id="amount"></strong><small id="remainder"></small></section>
-      ${field('총 지출액 (원)', 'expense', 'type="number" inputmode="numeric" min="0" max="999999999999" step="1"', event.expense)}
-      ${field('입금 마감 날짜', 'deadline', 'type="date"', event.deadline)}
-      ${field('마감 시간 (선택, 한국 시간)', 'time', 'type="time"', event.time)}
-      <p>${deadline(event) ? '입금 마감 ' + escape(deadline(event)) : '입금 마감 미정'}</p>
-      <button>정산 정보 저장</button>
+    <h1>${escape(draft.name)} 수정</h1>
+    <form id="event-editor">
+      <section><h2>항목 정보</h2>
+        ${field('이름', 'name', 'required maxlength="100"', draft.name)}
+        <p>종류: <strong>${eventKindLabel(draft)}</strong></p>
+        ${eventKind(draft) === 'event' ? field('시행일', 'date', 'type="date" required', draft.date || '') : ''}
+      </section>
+      <section><h2>참여자</h2>
+        <button id="choose" type="button">참여자 선택</button>
+        <p class="attendee-inline">${participantNames(draft).map(escape).join(', ') || '선택한 참여자가 없어요.'}</p>
+        ${draft.extras.map((extra) => `<p class="between"><span>${escape(extra.name)} · ${extra.count}명</span>
+          <button class="secondary" type="button" data-remove="${escape(extra.id)}">제외</button></p>`).join('')}
+        <details><summary>추가 참여자 등록</summary>
+          <label>등록 방식<select id="extra-kind"><option value="person">이름</option><option value="group">단체명과 인원</option></select></label>
+          ${field('이름 또는 단체명', 'extra-name', 'maxlength="80"')}
+          <div id="group-size" hidden>${field('단체 인원', 'extra-count', 'type="number" min="1" max="100000" step="1"', '1')}</div>
+          <button id="extra-add" type="button">참여자 추가</button>
+        </details>
+      </section>
+      <section><h2>정산과 입금 마감</h2>
+        <div class="summary" aria-live="polite">총 납부액<strong id="amount"></strong><small id="remainder"></small></div>
+        ${field('인당 납부액 (원)', 'amountPerPerson', 'type="number" inputmode="numeric" min="0" max="999999999999" step="1" required', initialPerPerson)}
+        ${field('입금 마감 날짜', 'deadline', `type="date" ${eventKind(draft) === 'settlement' ? 'required' : ''}`, draft.deadline)}
+        ${field('마감 시간 (선택, 한국 시간)', 'time', 'type="time"', draft.time)}
+        <p>${deadline(draft) ? '입금 마감 ' + escape(deadline(draft)) : '입금 마감 미정'}</p>
+      </section>
+      <button class="save-all">전체 내용 저장</button>
     </form>`;
-  drawSummary(event);
-  const update = (edit) => change((next) => {
-    const item = next.events.find(({ id }) => id === event.id);
-    edit(item);
-    prunePaid(item);
-  }, () => { location.hash = eventPage(event); });
+  drawSummary(draft);
+  const syncDraftFromForm = () => {
+    const data = new FormData($('#event-editor'));
+    draft.name = data.get('name') ?? draft.name;
+    if (eventKind(draft) === 'event') draft.date = data.get('date') ?? draft.date;
+    draft.deadline = data.get('deadline') ?? draft.deadline;
+    draft.time = data.get('time') ?? draft.time;
+    const amount = data.get('amountPerPerson');
+    draft.amountPerPerson = amount === '' ? '' : Number(amount);
+  };
+  $('#event-editor').addEventListener('input', () => {
+    syncDraftFromForm();
+    drawSummary(draft);
+  });
+  $('#event-editor').addEventListener('change', syncDraftFromForm);
   $('#choose').onclick = () => {
-    selection = new Set(event.selected);
+    syncDraftFromForm();
+    selection = new Set(draft.selected);
     $('#search').value = '';
     drawMembers();
     dialog.showModal();
   };
   $('#extra-kind').onchange = () => { $('#group-size').hidden = $('#extra-kind').value !== 'group'; };
   app.querySelectorAll('[data-remove]').forEach((button) => {
-    button.onclick = () => update((item) => {
-      item.extras = item.extras.filter((extra) => extra.id !== button.dataset.remove);
-    });
+    button.onclick = () => {
+      syncDraftFromForm();
+      draft.extras = draft.extras.filter((extra) => extra.id !== button.dataset.remove);
+      prunePaid(draft);
+      renderEventEdit(event);
+    };
   });
-  bind('#event-basics', (data) => {
-    const name = data.get('name').trim();
-    const kind = data.get('kind');
-    const date = data.get('date');
-    if (!name || (kind === 'event' && !date)) return status('이름과 행사 시행일을 확인해 주세요.');
-    update((item) => Object.assign(item, { name, kind, date: kind === 'event' ? date : '' }));
-  });
-  bind('#extra', (data) => {
-    const name = data.get('name').trim();
-    const count = data.get('kind') === 'person' ? 1 : Number(data.get('count'));
+  $('#extra-add').onclick = () => {
+    syncDraftFromForm();
+    const name = $('#event-editor [name="extra-name"]').value.trim();
+    const count = $('#extra-kind').value === 'person' ? 1 : Number($('#event-editor [name="extra-count"]').value);
     if (!name || !Number.isInteger(count) || count < 1 || count > 100000) return status('이름과 인원수를 확인해 주세요.');
-    update((item) => item.extras.push({ id: id(), name, count }));
-  });
-  const expense = $('#cost [name="expense"]');
-  expense.oninput = () => drawSummary({ ...event, expense: expense.validity.valid ? expense.value : '' });
-  bind('#cost', (data) => {
+    draft.extras.push({ id: id(), name, count });
+    renderEventEdit(event);
+  };
+  bind('#event-editor', (data) => {
+    const name = data.get('name').trim();
+    const date = data.get('date');
+    const amountPerPerson = data.get('amountPerPerson');
+    if (!name || (eventKind(draft) === 'event' && !date)) return status('이름과 행사 시행일을 확인해 주세요.');
+    if (amountPerPerson === '' || !Number.isFinite(Number(amountPerPerson)) || Number(amountPerPerson) < 0) return status('인당 납부액을 확인해 주세요.');
     if (data.get('time') && !data.get('deadline')) return status('마감 날짜도 입력해 주세요.');
-    update((item) => Object.assign(item, Object.fromEntries(data)));
+    const updated = structuredClone(draft);
+    Object.assign(updated, { name, date: eventKind(draft) === 'event' ? date : '',
+      amountPerPerson: Number(amountPerPerson), deadline: data.get('deadline'), time: data.get('time') });
+    updated.expense = Number(amountPerPerson) * people(updated);
+    prunePaid(updated);
+    change((next) => {
+      const index = next.events.findIndex(({ id }) => id === event.id);
+      next.events[index] = updated;
+    }, () => {
+      eventDraft = null;
+      location.hash = eventPage(event);
+    });
   });
 }
 
@@ -398,7 +428,8 @@ function drawMembers() {
 }
 
 function updateMemberCount(event) {
-  const total = people({ ...event, selected: [...selection] });
+  const source = location.hash.endsWith('/edit') && eventDraft?.id === event.id ? eventDraft : event;
+  const total = people({ ...source, selected: [...selection] });
   $('#count').textContent = '총 참여 ' + total + '명';
 }
 
@@ -407,6 +438,12 @@ $('#done').onclick = () => {
   const event = currentEvent();
   const selected = [...selection];
   dialog.close();
+  if (location.hash.endsWith('/edit') && eventDraft?.id === event?.id) {
+    eventDraft.selected = selected;
+    prunePaid(eventDraft);
+    renderEventEdit(event);
+    return;
+  }
   change((next) => {
     const item = next.events.find(({ id }) => id === event.id);
     item.selected = selected;
