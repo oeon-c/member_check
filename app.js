@@ -584,6 +584,15 @@ function renderSettingsEdit() {
     ${field('계좌번호', 'account', 'required', profile.account)}
     ${field('예금주', 'holder', 'required', profile.holder)}
     <button>총무 정보 저장</button></form>
+    ${state.templates.length ? `<section><h2>등록된 공지 템플릿</h2>
+      ${state.templates.map((item) => `<details><summary>${escape(item.name)} 수정</summary>
+        <form class="edit-template" data-template-id="${escape(item.id)}">
+          ${field('템플릿 이름', 'name', 'required maxlength="100"', item.name)}
+          <label>내용<textarea name="body" required>${escape(item.body)}</textarea></label>
+          <button>템플릿 수정 저장</button>
+        </form>
+      </details>`).join('')}
+    </section>` : ''}
     <form id="new-template"><h2>공지 템플릿</h2>
       ${state.templates.length ? `<ul>${state.templates.map((item) => '<li>' + escape(item.name) + '</li>').join('')}</ul>` : '<p>등록한 템플릿이 없어요.</p>'}
       <p><small>자동 입력 항목 {{이벤트명}} {{시행일}} {{인원}} {{참여자명단}} {{인당비용}} {{납부액}} {{마감}} {{총무}} {{은행}} {{계좌}} {{예금주}}</small></p>
@@ -600,6 +609,19 @@ function renderSettingsEdit() {
     const [name, body] = ['name', 'body'].map((key) => data.get(key).trim());
     if (!name || !body) return status('템플릿 이름과 내용을 입력해 주세요.');
     change((next) => next.templates.push({ id: id(), name, body }), () => { location.hash = '#settings'; });
+  });
+  app.querySelectorAll('.edit-template').forEach((form) => {
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const name = data.get('name').trim();
+      const body = data.get('body').trim();
+      if (!name || !body) return status('템플릿 이름과 내용을 입력해 주세요.');
+      change((next) => {
+        const template = next.templates.find(({ id }) => id === form.dataset.templateId);
+        if (template) Object.assign(template, { name, body });
+      }, () => { location.hash = '#settings'; });
+    };
   });
 }
 
