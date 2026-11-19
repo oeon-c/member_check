@@ -16,6 +16,7 @@ let client, club, session;
 let saving = false;
 let selection = new Set();
 let eventDraft = null;
+let editingSemesterId = null;
 
 // iOS Safari changes the visual viewport when its software keyboard opens.
 // Keep the focused field inside that visible area after focus and viewport changes.
@@ -79,6 +80,7 @@ async function change(edit, refresh = render, successMessage = '수정이 완료
 }
 
 const eventPage = (event) => '#event/' + event.id;
+const eventListPage = (event) => state.semesters.some(({ id }) => id === event.semester) ? '#events/' + event.semester : '#events';
 const eventEditPage = (event) => eventPage(event) + '/edit';
 const eventNoticePage = (event) => eventPage(event) + '/notice';
 const currentEvent = () => {
@@ -129,12 +131,25 @@ function render() {
   if (location.hash === '#roster') return renderRoster();
   if (location.hash === '#settings/edit') return renderSettingsEdit();
   if (location.hash === '#settings') return renderSettingsView();
+  const semesterRoute = location.hash.match(/^#events\/([^/]+)$/);
+  return renderEvents(semesterRoute ? semesterRoute[1] : 'all');
+}
+
+function renderEvents(selectedSemesterId = 'all') {
+  const tabs = [{ id: 'all', name: '전체' }, ...[...state.semesters].reverse().map(({ id, name }) => ({ id, name }))];
+  const visibleEvents = [...state.events]
+    .filter((item) => selectedSemesterId === 'all' || item.semester === selectedSemesterId)
+    .sort((a, b) => eventSortDate(b).localeCompare(eventSortDate(a)));
   app.innerHTML = `<div class="event-actions"><h1>행사·정산</h1><a class="button-link" href="#new-event">+ 항목 추가</a></div>
-    ${[...state.events].sort((a, b) => eventSortDate(b).localeCompare(eventSortDate(a))).map((item) =>
+    <div class="semester-tabs" aria-label="학기별 이벤트">
+      ${tabs.map((tab) => `<a aria-current="${tab.id === selectedSemesterId ? 'page' : 'false'}" class="semester-tab ${tab.id === selectedSemesterId ? 'active' : ''}"
+        href="${tab.id === 'all' ? '#events' : '#events/' + encodeURIComponent(tab.id)}">${escape(tab.name)}</a>`).join('')}
+    </div>
+    ${visibleEvents.map((item) =>
       `<a class="card between" href="${eventPage(item)}"><strong>${escape(item.name)}</strong>
-        <small><span class="kind-label">${eventKindLabel(item)}</span> · ${eventKind(item) === 'settlement' ? '입금 마감 ' + escape(deadline(item) || '미정') : escape(item.date)} · ${people(item)}명 ${settlement(item) ? '· ' + won(settlement(item).amount) : '· 정산 금액 미입력'}
+        <small><span class="kind-label">${eventKindLabel(item)}</span> · ${eventKind(item) === 'settlement' ? '입금 마감 ' + escape(deadline(item) || '미정') : escape(item.date)} · ${people(item)}명 ${settlement(item) ? '· ' + won(settlement(item).amount) + ' / 1인' : '· 정산 금액 미입력'}
           ${people(item) ? '· 입금 ' + paidCount(item) + '/' + people(item) + '명' : ''}</small></a>`).join('')
-      || '<p>등록한 항목이 없어요.</p>'}`;
+      || `<p>${selectedSemesterId === 'all' ? '등록한 항목이 없어요.' : '이 학기에 등록한 항목이 없어요.'}</p>`}`;
 }
 
 function renderNewEvent() {
@@ -186,10 +201,15 @@ function renderRoster() {
     ${field('학기 이름', 'name', 'required placeholder="2026년 2학기" maxlength="50"')}
     <label>이름 (한 줄에 한 명)<textarea required name="members"></textarea></label>
     <button>학기 명단 등록</button></form>
-    ${[...state.semesters].reverse().map((term) => `<section><details><summary>${escape(term.name)}
+    ${[...state.semesters].reverse().map((term) => `<section><details ${editingSemesterId === term.id ? 'open' : ''}><summary>${escape(term.name)}
       · ${term.members.length}명</summary><p>${term.members.map((member) => escape(member.name)).join(' · ')}</p>
-      <label>새 회원 이름<input maxlength="80" data-name="${term.id}"></label>
-      <button data-add="${term.id}">회원 추가</button></details></section>`).join('')}`;
+      ${editingSemesterId === term.id ? `<form id="edit-roster">
+        ${field('학기 이름', 'name', 'required maxlength="50"', term.name)}
+        <label>이름 (한 줄에 한 명)<textarea required name="members">${escape(term.members.map(({ name }) => name).join('\n'))}</textarea></label>
+        <div class="form-actions"><button>변경 저장</button><button class="secondary" id="cancel-roster-edit" type="button">취소</button></div>
+      </form>` : `<button class="secondary" type="button" data-edit-semester="${escape(term.id)}">학기 명단 수정</button>`}
+      <label>새 회원 이름<input maxlength="80" data-name="${escape(term.id)}"></label>
+      <button data-add="${escape(term.id)}">회원 추가</button></details></section>`).join('')}`;
   bind('#new-roster', (data) => {
     const name = data.get('name').trim();
     const names = data.get('members').split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
@@ -197,6 +217,50 @@ function renderRoster() {
     if (state.semesters.some((term) => term.name === name)) return status('이미 등록된 학기예요.');
     change((next) => next.semesters.push({ id: id(), name, members: names.map((name) => ({ id: id(), name })) }));
   });
+  app.querySelectorAll('[data-edit-semester]').forEach((button) => {
+    button.onclick = () => {
+      editingSemesterId = button.dataset.editSemester;
+      renderRoster();
+    };
+  });
+  if ($('#edit-roster')) {
+    bind('#edit-roster', (data) => {
+      const name = data.get('name').trim();
+      const names = data.get('members').split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
+      if (!name || !names.length) return status('학기 이름과 회원 이름을 입력해 주세요.');
+      if (state.semesters.some((term) => term.id !== editingSemesterId && term.name === name)) return status('이미 사용 중인 학기 이름이에요.');
+      const existing = state.semesters.find(({ id }) => id === editingSemesterId);
+      if (!existing) return;
+      const unmatched = [...existing.members];
+      const members = names.map((memberName) => {
+        const matchIndex = unmatched.findIndex((member) => member.name === memberName);
+        return matchIndex < 0 ? null : { ...unmatched.splice(matchIndex, 1)[0], name: memberName };
+      });
+      for (let index = 0; index < members.length; index += 1) {
+        if (members[index]) continue;
+        const previous = unmatched.shift();
+        members[index] = previous ? { ...previous, name: names[index] } : { id: id(), name: names[index] };
+      }
+      const retainedIds = new Set(members.map(({ id }) => id));
+      change((next) => {
+        const term = next.semesters.find(({ id }) => id === editingSemesterId);
+        term.name = name;
+        term.members = members;
+        next.events.filter((event) => event.semester === editingSemesterId).forEach((event) => {
+          event.selected = event.selected.filter((memberId) => retainedIds.has(memberId));
+          const activeKeys = new Set([...event.selected.map((memberId) => 'member:' + memberId), ...(event.extras ?? []).map(({ id }) => 'extra:' + id)]);
+          event.paid = (event.paid ?? []).filter((key) => activeKeys.has(key));
+        });
+      }, () => {
+        editingSemesterId = null;
+        renderRoster();
+      });
+    });
+    $('#cancel-roster-edit').onclick = () => {
+      editingSemesterId = null;
+      renderRoster();
+    };
+  }
   app.querySelectorAll('[data-add]').forEach((button) => {
     button.onclick = () => {
       const name = $(`[data-name="${button.dataset.add}"]`).value.trim();
@@ -233,7 +297,7 @@ function renderPending() {
 function renderEventView(event) {
   const attendees = paymentRows(event);
   const paid = paidKeys(event);
-  app.innerHTML = `<div class="event-actions"><a href="#events">‹ 행사·정산 목록</a>
+  app.innerHTML = `<div class="event-actions"><a href="${eventListPage(event)}">‹ 행사·정산 목록</a>
       <a class="button-link" href="${eventEditPage(event)}">이벤트 수정</a></div>
     <h1>${escape(event.name)}</h1>
     <section class="summary" aria-live="polite"><span id="summary-title"></span><strong id="amount"></strong><small id="remainder"></small></section>
@@ -262,7 +326,7 @@ function renderEventView(event) {
 }
 
 function renderEventNotice(event) {
-  app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 이벤트 보기</a>
+  app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 항목 보기</a>
       <a class="button-link" href="${eventEditPage(event)}">이벤트 수정</a></div>
     <h1>${escape(event.name)} 입금 공지</h1>
     ${state.templates.length ? `<section>
@@ -325,7 +389,7 @@ function renderEventEdit(event) {
   const draft = eventDraft;
   if (eventKind(draft) === 'settlement' && draft.amountPerPerson === undefined)
     draft.amountPerPerson = settlement(draft)?.amount ?? '';
-  app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 항목 보기</a></div>
+  app.innerHTML = `<div class="event-actions"><a href="${eventListPage(event)}">‹ 행사·정산 목록</a></div>
     <h1>${escape(draft.name)} 수정</h1>
     <form id="event-editor">
       <section><h2>항목 정보</h2>
