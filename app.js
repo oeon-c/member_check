@@ -136,20 +136,24 @@ function render() {
 }
 
 function renderEvents(selectedSemesterId = 'all') {
-  const tabs = [{ id: 'all', name: '전체' }, ...[...state.semesters].reverse().map(({ id, name }) => ({ id, name }))];
+  const semesters = [{ id: 'all', name: '전체' }, ...[...state.semesters].reverse().map(({ id, name }) => ({ id, name }))];
+  const selectedSemester = state.semesters.find(({ id }) => id === selectedSemesterId);
   const visibleEvents = [...state.events]
     .filter((item) => selectedSemesterId === 'all' || item.semester === selectedSemesterId)
     .sort((a, b) => eventSortDate(b).localeCompare(eventSortDate(a)));
-  app.innerHTML = `<div class="event-actions"><h1>행사·정산</h1><a class="button-link" href="#new-event">+ 항목 추가</a></div>
-    <div class="semester-tabs" aria-label="학기별 이벤트">
-      ${tabs.map((tab) => `<a aria-current="${tab.id === selectedSemesterId ? 'page' : 'false'}" class="semester-tab ${tab.id === selectedSemesterId ? 'active' : ''}"
-        href="${tab.id === 'all' ? '#events' : '#events/' + encodeURIComponent(tab.id)}">${escape(tab.name)}</a>`).join('')}
-    </div>
+  app.innerHTML = `<div class="event-actions"><h1>${selectedSemester ? escape(selectedSemester.name) + ' 행사·정산' : '행사·정산'}</h1><a class="button-link" href="#new-event">+ 항목 추가</a></div>
+    <label class="semester-picker">학기 페이지 선택<select id="semester-select" aria-label="학기 페이지 선택">
+      ${semesters.map((semester) => `<option value="${escape(semester.id)}" ${semester.id === selectedSemesterId ? 'selected' : ''}>${escape(semester.name)}</option>`).join('')}
+    </select></label>
     ${visibleEvents.map((item) =>
       `<a class="card between" href="${eventPage(item)}"><strong>${escape(item.name)}</strong>
         <small><span class="kind-label">${eventKindLabel(item)}</span> · ${eventKind(item) === 'settlement' ? '입금 마감 ' + escape(deadline(item) || '미정') : escape(item.date)} · ${people(item)}명 ${settlement(item) ? '· ' + won(settlement(item).amount) + ' / 1인' : '· 정산 금액 미입력'}
           ${people(item) ? '· 입금 ' + paidCount(item) + '/' + people(item) + '명' : ''}</small></a>`).join('')
       || `<p>${selectedSemesterId === 'all' ? '등록한 항목이 없어요.' : '이 학기에 등록한 항목이 없어요.'}</p>`}`;
+  $('#semester-select').onchange = () => {
+    const id = $('#semester-select').value;
+    location.hash = id === 'all' ? '#events' : '#events/' + encodeURIComponent(id);
+  };
 }
 
 function renderNewEvent() {
