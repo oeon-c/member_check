@@ -110,6 +110,9 @@ function prunePaid(event) {
 }
 const field = (label, name, extra = '', value = '') =>
   `<label>${label}<input name="${name}" ${extra} value="${escape(value)}"></label>`;
+const eventKind = (event) => event.kind === 'settlement' ? 'settlement' : 'event';
+const eventKindLabel = (event) => eventKind(event) === 'settlement' ? '정산 체크용' : '행사';
+const eventSortDate = (event) => event.date || event.deadline || '';
 
 function render() {
   $('#nav').hidden = false;
@@ -124,30 +127,47 @@ function render() {
   if (location.hash === '#roster') return renderRoster();
   if (location.hash === '#settings/edit') return renderSettingsEdit();
   if (location.hash === '#settings') return renderSettingsView();
-  app.innerHTML = `<div class="event-actions"><h1>이벤트</h1><a class="button-link" href="#new-event">+ 새 이벤트</a></div>
-    ${[...state.events].sort((a, b) => b.date.localeCompare(a.date)).map((item) =>
+  app.innerHTML = `<div class="event-actions"><h1>행사·정산</h1><a class="button-link" href="#new-event">+ 항목 추가</a></div>
+    ${[...state.events].sort((a, b) => eventSortDate(b).localeCompare(eventSortDate(a))).map((item) =>
       `<a class="card between" href="${eventPage(item)}"><strong>${escape(item.name)}</strong>
-        <small>${item.date} · ${people(item)}명 ${settlement(item) ? '· ' + won(settlement(item).amount) : '· 정산 금액 미입력'}
+        <small><span class="kind-label">${eventKindLabel(item)}</span> · ${eventKind(item) === 'settlement' ? '입금 마감 ' + escape(deadline(item) || '미정') : escape(item.date)} · ${people(item)}명 ${settlement(item) ? '· ' + won(settlement(item).amount) : '· 정산 금액 미입력'}
           ${people(item) ? '· 입금 ' + paidCount(item) + '/' + people(item) + '명' : ''}</small></a>`).join('')
-      || '<p>등록한 이벤트가 없어요.</p>'}`;
+      || '<p>등록한 항목이 없어요.</p>'}`;
 }
 
 function renderNewEvent() {
-  app.innerHTML = `<div class="event-actions"><a href="#events">‹ 이벤트 목록</a></div>
-    <h1>새 이벤트</h1><form id="new-event">
-      ${field('이벤트명', 'name', 'required maxlength="100"')}
-      ${field('시행일', 'date', 'type="date" required')}
+  app.innerHTML = `<div class="event-actions"><a href="#events">‹ 행사·정산 목록</a></div>
+    <h1>새 항목</h1><form id="new-event">
+      ${field('이름', 'name', 'required maxlength="100"')}
+      <label>종류<select name="kind" id="new-kind"><option value="event">행사</option><option value="settlement">정산 체크용</option></select></label>
+      <div id="new-event-date">${field('시행일', 'date', 'type="date" required')}</div>
+      <div id="new-event-deadline" hidden>${field('입금 마감일', 'deadline', 'type="date"')}${field('마감 시간 (선택, 한국 시간)', 'time', 'type="time"')}</div>
       <label>학기<select name="semester" required>${[...state.semesters].reverse().map((term) =>
         `<option value="${escape(term.id)}">${escape(term.name)}</option>`).join('')}</select></label>
-      <button ${state.semesters.length ? '' : 'disabled'}>이벤트 만들기</button>
+      <button ${state.semesters.length ? '' : 'disabled'}>항목 만들기</button>
       ${state.semesters.length ? '' : '<p><a href="#roster">학기 명단을 먼저 등록해 주세요.</a></p>'}
     </form>`;
+  const syncKind = () => {
+    const settlementOnly = $('#new-kind').value === 'settlement';
+    $('#new-event-date').hidden = settlementOnly;
+    $('#new-event-deadline').hidden = !settlementOnly;
+    $('#new-event-date [name="date"]').required = !settlementOnly;
+    $('#new-event-deadline [name="deadline"]').required = settlementOnly;
+  };
+  $('#new-kind').onchange = syncKind;
+  syncKind();
   bind('#new-event', (data) => {
     const name = data.get('name').trim();
     if (!name) return status('이벤트명을 입력해 주세요.');
-    const item = { id: id(), name, date: data.get('date'), semester: data.get('semester'),
-      selected: [], extras: [], paid: [], expense: '', deadline: '', time: '' };
-    change((next) => next.events.push(item), () => { location.hash = eventPage(item); });
+    const kind = data.get('kind');
+    const date = data.get('date');
+    const deadlineDate = data.get('deadline');
+    if (kind === 'event' && !date) return status('행사 시행일을 입력해 주세요.');
+    if (kind === 'settlement' && !deadlineDate) return status('입금 마감일을 입력해 주세요.');
+    if (data.get('time') && !deadlineDate) return status('마감 날짜도 입력해 주세요.');
+    const item = { id: id(), name, kind, date: kind === 'event' ? date : '', semester: data.get('semester'),
+      selected: [], extras: [], paid: [], expense: '', deadline: deadlineDate || '', time: data.get('time') || '' };
+    change((next) => next.events.push(item), () => { location.hash = eventPage(item); }, '새 항목이 등록되었습니다.');
   });
 }
 
@@ -194,11 +214,11 @@ function drawSummary(event) {
 function renderPending() {
   const pending = [...state.events]
     .filter((event) => people(event) > 0 && paidCount(event) < people(event))
-    .sort((a, b) => b.date.localeCompare(a.date));
-  app.innerHTML = `<h1>미완료 정산</h1><p>입금 확인이 끝나지 않은 이벤트예요.</p>
+    .sort((a, b) => eventSortDate(b).localeCompare(eventSortDate(a)));
+  app.innerHTML = `<h1>미완료 정산</h1><p>입금 확인이 끝나지 않은 항목이에요.</p>
     ${pending.map((event) => `<a class="card" href="${eventPage(event)}">
       <strong>${escape(event.name)}</strong>
-      <small>${event.date} · ${settlement(event) ? won(settlement(event).amount) + ' / 1인' : '정산 금액 미입력'}</small>
+      <small>${eventKindLabel(event)} · ${eventKind(event) === 'settlement' ? '입금 마감 ' + escape(deadline(event) || '미정') : escape(event.date)} · ${settlement(event) ? won(settlement(event).amount) + ' / 1인' : '정산 금액 미입력'}</small>
       <span class="progress-label">입금 ${paidCount(event)} / ${people(event)}명</span>
     </a>`).join('') || '<section><p>미완료된 정산이 없어요.</p></section>'}`;
 }
@@ -206,11 +226,11 @@ function renderPending() {
 function renderEventView(event) {
   const attendees = paymentRows(event);
   const paid = paidKeys(event);
-  app.innerHTML = `<div class="event-actions"><a href="#events">‹ 이벤트 목록</a>
+  app.innerHTML = `<div class="event-actions"><a href="#events">‹ 행사·정산 목록</a>
       <a class="button-link" href="${eventEditPage(event)}">이벤트 수정</a></div>
     <h1>${escape(event.name)}</h1>
     <section class="summary" aria-live="polite">1인당 납부액<strong id="amount"></strong><small id="remainder"></small></section>
-    <section class="between"><span>시행일 ${escape(event.date)}</span><strong>총 참여 ${people(event)}명</strong></section>
+    <section class="between"><span class="kind-label">${eventKindLabel(event)}</span>${eventKind(event) === 'event' ? `<span>시행일 ${escape(event.date)}</span>` : ''}<strong>총 참여 ${people(event)}명</strong></section>
     <section><h2>참여자</h2>
       <p class="attendee-inline">${participantNames(event).map(escape).join(', ') || '참여자를 선택하지 않았어요.'}</p>
       <p><small>입금 ${paidCount(event)} / ${people(event)}명 완료</small></p>
@@ -294,12 +314,13 @@ function updatePaymentDialogSummary() {
 }
 
 function renderEventEdit(event) {
-  app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 이벤트 보기</a></div>
+  app.innerHTML = `<div class="event-actions"><a href="${eventPage(event)}">‹ 항목 보기</a></div>
     <h1>${escape(event.name)} 수정</h1>
-    <form id="event-basics"><h2>이벤트 정보</h2>
-      ${field('이벤트명', 'name', 'required maxlength="100"', event.name)}
-      ${field('시행일', 'date', 'type="date" required', event.date)}
-      <button>이벤트 정보 저장</button>
+    <form id="event-basics"><h2>항목 정보</h2>
+      ${field('이름', 'name', 'required maxlength="100"', event.name)}
+      <p>종류: <strong>${eventKindLabel(event)}</strong></p><input type="hidden" name="kind" value="${eventKind(event)}">
+      ${eventKind(event) === 'event' ? field('시행일', 'date', 'type="date" required', event.date || '') : '<input type="hidden" name="date" value="">'}
+      <button>항목 정보 저장</button>
     </form>
     <section><h2>참여자</h2>
       <button id="choose" type="button">참여자 선택</button>
@@ -340,9 +361,10 @@ function renderEventEdit(event) {
   });
   bind('#event-basics', (data) => {
     const name = data.get('name').trim();
+    const kind = data.get('kind');
     const date = data.get('date');
-    if (!name || !date) return status('이벤트명과 시행일을 입력해 주세요.');
-    update((item) => Object.assign(item, { name, date }));
+    if (!name || (kind === 'event' && !date)) return status('이름과 행사 시행일을 확인해 주세요.');
+    update((item) => Object.assign(item, { name, kind, date: kind === 'event' ? date : '' }));
   });
   bind('#extra', (data) => {
     const name = data.get('name').trim();
